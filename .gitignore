@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+conda-env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Data (keep raw, ignore processed initially)
+data/processed/*.csv
+
+# Reports (generated figures)
+reports/figures/*.png
+reports/figures/*.jpg
+reports/figures/*.svg
+
+# Environment variables
+.env
+.env.local
+
