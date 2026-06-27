@@ -63,96 +63,60 @@ def detect_missing_values(df: pd.DataFrame) -> pd.Series:
     cols_missing_cnt = df.isnull().sum()
     return cols_missing_cnt[cols_missing_cnt > 0].sort_values(ascending = False)
 
-def impute_customer_age(df: pd.DataFrame) -> pd.DataFrame:
-    """Impute missing customer_age with the global median.
-
-    The median is robust to the 14 high outliers and justified by
-    negligible inter-group variance across product categories and
-    payment methods (see notebook analysis).
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input DataFrame.
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with customer_age fully populated.
-    """
-    
-    Q2 = df["customer_age"].median()
-    df["customer_age"] = df["customer_age"].fillna(Q2)
-    return df
-
-def impute_customer_rating(
+def impute_column(
     df: pd.DataFrame,
+    target_column: str,
+    statistic: str = "median",
     group_by: str | None = None,
 ) -> pd.DataFrame:
-    """Impute missing customer_rating values.
+    """Impute missing values in a target column using global or group-based statistics.
 
-    Uses the median by default (a valid integer rating, robust to the
-    37 low-rating outliers). If group_by is provided, uses the per-group
-    median with a global-median fallback for groups with no valid rating.
-
-    Holdout evaluation (20% mask) shows customer-grouped imputation
-    reduces MAE by ~19% compared to the global median.
+    Supports both numeric (median) and categorical (mode) imputation strategies.
+    When group_by is provided, uses per-group statistics with a global fallback
+    for groups that have no valid values or when the grouping feature itself is missing.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Input DataFrame.
+        Input DataFrame containing the target column and optional grouping feature.
+    target_column : str
+        Name of the column to impute (e.g., 'customer_age', 'customer_rating', 'payment_method').
+    statistic : {"median", "mode"}, default="median"
+        Summary statistic to use for imputation:
+        - "median": For numeric columns (e.g., customer_age, customer_rating).
+        - "mode": For categorical columns (e.g., payment_method).
     group_by : str or None, optional
-        Column to condition imputation on (e.g. "customer_id").
+        Column name to condition imputation on (e.g., "customer_id", "product").
+        If None, uses global statistic for all missing values.
+        If provided, computes per-group statistics and falls back to global
+        statistic when:
+        - The group has no non-missing values in the target column.
+        - The grouping feature itself is missing for a given row.
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with customer_rating fully populated.
+        DataFrame with target_column fully populated (no missing values).
+
     """
+
+    if statistic == "median":
+        global_stats = df[target_column].median()
+        stats = lambda x: x.median()
+    elif statistic == "mode":
+        global_stats = df[target_column].mode()[0]
+        stats = lambda x: x.mode()[0]
     
-    Q2 = df["customer_rating"].median()
     if group_by is None:
-        df["customer_rating"] = df["customer_rating"].fillna(Q2)
+        df[target_column] = df[target_column].fillna(global_stats)
     else:
-        customer_rating_pred = df.groupby(group_by, observed = True)["customer_rating"].transform(
-            lambda x : Q2 if pd.isna(x.median()) else x.median())
-        df["customer_rating"] = df["customer_rating"].fillna(customer_rating_pred)
+        non_missing_idx = df[~df[target_column].isnull()].index
+        missing_idx = df[df[target_column].isnull()].index
+        grouped_stats = df.loc[non_missing_idx].groupby(group_by, observed = True)[target_column].apply(stats)
+        df.loc[missing_idx, target_column] = df.loc[missing_idx].apply(
+            lambda x: global_stats if (pd.isna(x[group_by]) or x[group_by] not in grouped_stats.index) else grouped_stats[x[group_by]], axis = 1)
     return df
 
-def impute_payment_method(
-    df: pd.DataFrame,
-    group_by: str | None = None,
-) -> pd.DataFrame:
-    """Impute missing payment_method values.
-
-    Uses the global mode by default. If group_by is provided, uses
-    the per-group mode with a global-mode fallback for groups with
-    no valid value.
-
-    Holdout evaluation shows customer-grouped imputation increases
-    accuracy by ~35% over the global mode.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input DataFrame.
-    group_by : str or None, optional
-        Column to condition imputation on (e.g. "customer_id").
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with payment_method fully populated.
-    """
-    payment_method_mode = df["payment_method"].mode()[0]
-    if group_by is None:
-        df["payment_method"] = df["payment_method"].fillna(payment_method_mode)
-    else:
-        payment_method_pred = df.groupby(group_by, observed = True)["payment_method"].transform(
-            lambda x: x.mode()[0])
-        df["payment_method"] = df["payment_method"].fillna(payment_method_pred)
-    return df 
 
 def cast_clean_dtypes(
     df: pd.DataFrame,
