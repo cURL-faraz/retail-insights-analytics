@@ -1,12 +1,10 @@
 """Data cleaning utilities for the retail sales analysis project."""
 
 from __future__ import annotations
-
 from typing import Sequence
-
 from pathlib import Path
-
 import pandas as pd
+import numpy as np
 
 def load_data(filepath: str = "../data/raw/retail_sales.csv") -> pd.DataFrame:
     """Load the raw retail sales CSV.
@@ -59,10 +57,252 @@ def detect_missing_values(df: pd.DataFrame) -> pd.Series:
         Columns with at least one missing value (index = column name,
         value = count), sorted descending. Empty if no missing values.
     """
-    
-    cols_missing_cnt = df.isnull().sum()
-    return cols_missing_cnt[cols_missing_cnt > 0].sort_values(ascending = False)
 
+    cols_missing_cnt = df.isnull().sum()
+    return cols_missing_cnt[cols_missing_cnt > 0].sort_values(ascending = False)    
+
+def print_missing_value_intersection(df: pd.DataFrame) -> None:
+    """
+    Analyzes and prints the intersection of missing values across 
+    customer_age, customer_rating, and payment_method columns.
+    
+    Args:
+        df: The pandas DataFrame containing the retail data.
+    """
+    ca_nans = df["customer_age"].isnull()
+    cr_nans = df["customer_rating"].isnull()
+    pm_nans = df["payment_method"].isnull()
+
+    ca_cr = (ca_nans & cr_nans).sum()
+    ca_pm = (ca_nans & pm_nans).sum()
+    cr_pm = (cr_nans & pm_nans).sum()
+    all_three = (ca_nans & cr_nans & pm_nans).sum()
+
+    print("Missing value intersection counts:")
+    print(f"customer_age ∩ customer_rating: {ca_cr}")
+    print(f"customer_age ∩ payment_method: {ca_pm}")
+    print(f"customer_rating ∩ payment_method: {cr_pm}")
+    print(f"All three columns: {all_three}")
+
+    total_missing = (ca_nans | cr_nans | pm_nans).sum()
+    pct_missing = (total_missing / len(df)) * 100
+    print(f"Using dropna() would remove: {total_missing} rows ({pct_missing:.2f}%)")
+
+def print_missing_report(
+    df: pd.DataFrame,
+    column: str,
+    missing_count: int,
+) -> None:
+    """
+    Print a formatted missing-value summary for a single column.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The dataset being analyzed.
+    column : str
+        Name of the column to report on.
+    missing_count : int
+        Pre-computed count of missing values for the column (from missing_report series).
+
+    Returns
+    -------
+    None
+        Prints formatted output to stdout.
+    """
+    
+    missing_pct = missing_count * 100 / len(df)
+    print(f"'{column}' has {missing_count} missing values ({missing_pct:.2f}% of total rows).")
+
+def detect_outliers_iqr(series: pd.Series) -> pd.Series:
+    """Detect outliers using the Interquartile Range (IQR) method.
+
+    Values below Q1 - 1.5×IQR or above Q3 + 1.5×IQR are flagged
+    as outliers. This is a robust method that is not affected by
+    the outliers themselves.
+
+    Parameters
+    ----------
+    series : pd.Series
+        Numeric series to check for outliers.
+
+    Returns
+    -------
+    pd.Series
+        Boolean series where True indicates an outlier.
+    """
+    
+    Q1, Q3 = series.quantile([0.25, 0.75])
+    IQR = Q3 - Q1
+    lower_fence = Q1 - IQR * 1.5 
+    upper_fence = Q3 + IQR * 1.5 
+    return (series < lower_fence) | (series > upper_fence)
+
+def compute_max_deviations(
+    df: pd.DataFrame,
+    target_column: str,
+    grouping_features: list[str],
+) -> dict[str, float]:
+    """
+    Compute maximum percentage deviation of group medians from global median.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe.
+    target_column : str
+        Column to analyze (e.g., 'customer_age', 'customer_rating').
+    grouping_features : list[str]
+        List of features to test for group-based imputation.
+ 
+    Returns
+    -------
+    dict[str, float]
+        Dictionary mapping feature name to maximum deviation percentage.
+    """
+    
+    ind = df[~df[target_column].isnull()].index
+    global_median = df[target_column].median()
+    max_deviations = {}
+    for feature in grouping_features:
+        max_deviations[feature] = ((((df.loc[ind].groupby(feature, observed = True)[target_column].median()) - global_median).abs()) * 100 / global_median).max()
+    return max_deviations
+
+def holdout_imputation_test(
+    df: pd.DataFrame,
+    target_column: str,
+    grouping_features: list[str],
+    threshold: float,
+    test_size: float = 0.30,
+    statistic: str = "median",
+    metric: str = "mae",
+    random_state: int = 42,
+) -> pd.DataFrame:
+    """Stage 2 holdout test comparing global vs. group-based imputation lift.
+
+    Masks a random holdout of known target values, recomputes imputation
+    statistics from the remaining training portion only, and measures the
+    predictive lift of each candidate grouping feature against the global
+    baseline. Numeric targets are scored with Mean Absolute Error (MAE) and
+    categorical targets with classification accuracy. Only features whose
+    improvement meets the threshold are retained, justifying the added
+    pipeline complexity of group-based structures.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame containing the target column and grouping features.
+    target_column : str
+        Column to impute (e.g., 'customer_age', 'customer_rating', 'payment_method').
+    grouping_features : list of str
+        Candidate features to test for group-based imputation (e.g., ['product']).
+    threshold : float
+        Minimum required improvement over the global baseline for a feature to pass:
+        - For MAE: global_MAE - group_MAE must be >= threshold (error reduction).
+        - For accuracy: group_accuracy - global_accuracy must be >= threshold.
+    test_size : float, default=0.30
+        Proportion of known target values to mask as the holdout set.
+    statistic : {"median", "mode"}, default="median"
+        Summary statistic used for imputation:
+        - "median": For numeric targets (e.g., customer_age, customer_rating).
+        - "mode": For categorical targets (e.g., payment_method).
+    metric : {"mae", "accuracy"}, default="mae"
+        Evaluation metric:
+        - "mae": Mean Absolute Error for numeric targets (lower is better).
+        - "accuracy": Proportion of correct predictions for categorical targets.
+    random_state : int, default=42
+        Random seed for the holdout split, for reproducibility.
+
+    Returns
+    -------
+    pd.DataFrame
+        A summary DataFrame containing the evaluation results for each tested 
+        grouping feature. Rows are sorted best-first (ascending order for MAE 
+        or descending order for accuracy).
+
+    """
+
+    data_idx = df[~df[target_column].isnull()].index
+    test_idx = df.loc[data_idx].sample(frac = test_size, random_state = random_state).index
+    features_eval = {}
+    for feature in grouping_features + [target_column]:
+        data = df.loc[data_idx].copy()
+        data.loc[test_idx, target_column] = np.nan
+        if feature == target_column:
+            data = impute_column(data, target_column, statistic)
+        else:
+            data = impute_column(data, target_column, statistic, feature)
+        
+        if metric == "mae":
+            features_eval[feature] = (data.loc[test_idx, target_column] - df.loc[test_idx, target_column]).abs().sum() / len(test_idx)
+        elif metric == "accuracy":
+            features_eval[feature] = (data.loc[test_idx, target_column] == df.loc[test_idx, target_column]).mean()
+    
+    global_eval = features_eval.pop(target_column)
+    print(f'{metric.upper()} Score of {target_column} imputation using global {statistic}: {global_eval}')
+    
+    features_eval = pd.DataFrame({'feature' : features_eval.keys(), f'{metric}' : features_eval.values()})
+    if metric == 'mae':
+        features_eval["improvement"] = global_eval - features_eval['mae']
+        features_eval["passes"] = features_eval["improvement"] >= threshold
+        features_eval = features_eval.sort_values('mae')
+    elif metric == 'accuracy':
+        features_eval["improvement"] = features_eval['accuracy'] - global_eval
+        features_eval["passes"] = features_eval["improvement"] >= threshold
+        features_eval = features_eval.sort_values('accuracy', ascending = False)
+        
+    return features_eval
+
+def mode_based_feature_selection(
+    df: pd.DataFrame,
+    target_column: str,
+    grouping_features: list[str],
+    threshold: float = 0.15,
+) -> pd.DataFrame:
+    """
+    Stage 1: Mode-Based Relative Frequency Shift for categorical imputation.
+
+    Evaluates candidate grouping features to determine if they create sub-groups
+    with distinct payment class distributions. A feature passes if at least one
+    of its groups satisfies either:
+      1. Mode Cardinality Flip: Local mode differs from the global mode.
+      2. Baseline Frequency Spike: Local mode matches global but its relative
+         frequency exceeds the global baseline by >= threshold.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The dataset containing the target column and grouping features.
+    target_column : str
+        The categorical column to impute (e.g., 'payment_method').
+    grouping_features : list[str]
+        Candidate features to test as grouping keys.
+    threshold : float, default=0.15
+        Minimum relative frequency shift required for a same-mode group to pass.
+
+    Returns
+    -------
+    pd.DataFrame
+        A two-column DataFrame with 'feature' names and 'is_selected' boolean
+        indicating which features passed Stage 1 and should proceed to holdout.
+    """
+    
+    global_mode = df[target_column].mode()[0]
+    non_missing_idx = df[~df[target_column].isnull()].index
+    global_mode_rf = (df.loc[non_missing_idx, target_column] == global_mode).mean()
+    features_pass = {}
+
+    def group_evaluation(group):
+        local_mode = group.mode()[0]
+        return (local_mode != global_mode) or (((group == local_mode).mean() - global_mode_rf) >= threshold)
+            
+    for feature in grouping_features:
+        grouped_mode = df.loc[non_missing_idx].groupby(feature, observed = True)[target_column].apply(
+            lambda x: group_evaluation(x))
+        features_pass[feature] = grouped_mode.any()
+            
+    return pd.DataFrame({'feature' : features_pass.keys(), 'is_selected' : features_pass.values()})
+        
 def impute_column(
     df: pd.DataFrame,
     target_column: str,
