@@ -34,11 +34,6 @@ conda-env/
 # Data (keep raw, ignore processed initially)
 data/processed/*.csv
 
-# Reports (generated figures)
-reports/figures/*.png
-reports/figures/*.jpg
-reports/figures/*.svg
-
 # Environment variables
 .env
 .env.local
