@@ -26,6 +26,9 @@ Based on the final executive report (`reports/report.md`), here is what the data
 * **The Discount Paradox:** Customer satisfaction increases consistently with larger discounts, and this trend remains visible even within major segments (like Electronics and the West). Discounting does not appear to cheapen or harm the brand experience.
     *(See: `reports/figures/q3_discount_vs_rating.png`)*
 
+* **Hyper-Concentrated Product Mix (The Flagship Effect):** Company revenue is dangerously top-heavy. The **top 5 highest-grossing products account for ~68.6% of total sales**, with Electronics holding four of those five positions. Laptop, Smartphone, and Tablet are the flagship earners, meaning overall performance is tightly coupled to a handful of SKUs. Diversifying demand beyond these items is a key resilience priority.
+    *(See: `reports/figures/q4_product_concentration.png`)*
+
 * **Hyper-Concentrated Revenue (The VIP Effect):** Revenue is highly concentrated. A small number of electronic products generate most sales, and the **top 10% of customers contribute ~33% of total revenue**. VIP retention is strategically critical.
     *(See: `reports/figures/q5_customer_vs_revenue_share.png`)*
 
@@ -62,7 +65,7 @@ Based on the final executive report (`reports/report.md`), here is what the data
 ## 📂 Directory Structure
 
 ```
-data_analytics_project/
+retail_insights_analytics/
 ├── data/
 │   ├── processed/
 │   │   └── retail_sales_cleaned.csv
@@ -78,11 +81,12 @@ data_analytics_project/
 │   │   ├── q1_category_signature_heatmap.png
 │   │   ├── q2_region_decomposition.png
 │   │   ├── q3_discount_vs_rating.png
-│   │   ├── q4_rating_returns_scatter.png
+│   │   ├── q4_product_concentration.png
 │   │   ├── q5_customer_vs_revenue_share.png
 │   │   └── q6_june_rebound_decomposition.png
 │   └── report.md
 ├── src/
+│   ├── analysis.py
 │   ├── data_cleaning.py
 │   └── plots.py
 ├── requirements.txt

@@ -104,6 +104,8 @@ def style_axis(
     x_label: str | None,
     y_label: str | None,
     title: str,
+    label_pad:int | None = None,
+    title_pad: int | None = None,
     label_fontsize: int = 12,
     title_fontsize: int = 14,
     title_fontweight: str = 'bold',
@@ -129,10 +131,10 @@ def style_axis(
         Font weight for the title.
     """
     if x_label is not None:
-        ax.set_xlabel(x_label, fontsize = label_fontsize)
+        ax.set_xlabel(x_label, fontsize = label_fontsize, labelpad = label_pad)
     if y_label is not None:
-        ax.set_ylabel(y_label, fontsize = label_fontsize)
-    ax.set_title(title, fontsize = title_fontsize, fontweight = title_fontweight)
+        ax.set_ylabel(y_label, fontsize = label_fontsize, labelpad = label_pad)
+    ax.set_title(title, fontsize = title_fontsize, fontweight = title_fontweight, pad = title_pad)
 
 def plot_revenue_by_category(
     df: pd.DataFrame,
@@ -336,3 +338,212 @@ def plot_monthly_revenue_with_rolling(
 
     monthly_ax.legend(handles_1 + handles_2, labels_1 + labels_2, loc = 'upper left', 
                     bbox_to_anchor = (1.05, 1))
+    
+def plot_category_signature_heatmap(
+    norm_data: pd.DataFrame,
+    output_path: str | None = None
+) -> None:
+    """Render and save a normalized heatmap detailing category performance signatures.
+
+    Parameters
+    ----------
+    norm_data : pd.DataFrame
+        The transposed, normalized metric DataFrame from `src.analysis`.
+    output_path : str, optional
+        Filepath destination to save the generated figure. If None, saving is skipped.
+
+    Returns
+    -------
+    None
+        Displays the chart via plt.show().
+    """
+
+    fig, ax = plt.subplots(figsize = (9, 5), dpi = 200)
+
+    sns.heatmap(norm_data, annot = True, fmt = ".2f", cmap = "YlGnBu", linewidth = 0.5,
+                cbar_kws = {'label' : 'Normalized Value (0-1)'}, ax = ax)
+    
+    style_axis(ax, 'Category', 'Metric', 'Category Signature: What Drives Revenue?', 10, 15)
+    
+    fig.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi = 300, bbox_inches ='tight')
+    plt.show()
+
+def plot_regional_decomposition(
+    regional_data: pd.DataFrame,
+    output_path: str | None = None
+) -> None:
+    """Render a 3-panel bar chart decomposing why the leading region dominates.
+
+    Parameters
+    ----------
+    regional_data : pd.DataFrame
+        Aggregated regional dataset from `src.analysis`.
+    output_path : str, optional
+        Filepath destination to save the generated figure.
+
+    Returns
+    -------
+    None
+    """
+
+    palette = {r: ('#2c7fb8' if r == 'West' else '#cccccc') for r in regional_data['region']}
+    y_labels = ['Unique Customers', 'Orders / Customer', 'Revenue / Order($)']
+    y_cols = ['customer_count', 'orders_per_customer', 'avg_order_value']
+
+    fig, ax = plt.subplots(nrows = 1, ncols = 3, figsize = (15, 5), dpi = 200) 
+    
+    for i, sub_ax in enumerate(ax):
+        y_col = y_cols[i]
+        y_label = y_labels[i]
+        title = y_col.replace('_', ' ').title()
+        sns.barplot(data = regional_data.sort_values(y_col, ascending = False), x = 'region',
+                     y = y_col, hue = 'region', legend = False, ax = sub_ax, palette = palette)
+        style_axis(sub_ax, 'Region', y_label, title, 10, 15)
+        sub_ax.grid(axis = 'y', alpha = 0.3)    
+    
+    fig.suptitle("Why West Leads: Customer Volume, Not Bigger Baskets", fontsize = 15, fontweight = 'bold', y = 1.08)
+    fig.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi = 300, bbox_inches = 'tight')
+    plt.show()
+
+def plot_discount_vs_rating_segments(
+    discount_data_dict: dict[str, pd.DataFrame],
+    output_path: str | None = None
+) -> None:
+    """Render a multi-line plot tracking discount correlation profiles across business segments.
+
+    Parameters
+    ----------
+    discount_data_dict : dict[str, pd.DataFrame]
+        Segmented datasets generated from `src.analysis.get_discount_vs_rating_data`.
+    output_path : str, optional
+        Filepath destination to save the generated figure.
+
+    Returns
+    -------
+    None
+    """
+    fig, ax = plt.subplots(figsize = (9, 5), dpi = 200)
+
+    colors = ["#2c7fb8", "#d95f02", "#1b9e77"]
+    markers = ['o', 's', '^']
+    linewidths = [2.5, 1.8, 1.8]
+    linestyles = ['-', '--', '--']
+    for i, segment in enumerate(discount_data_dict.keys()):
+        label = segment + ' Region' if segment == 'West' else segment
+        sns.lineplot(data = discount_data_dict[segment], x = 'discount_pct', y = 'avg_customer_rating',
+                     label = label, color = colors[i], linewidth = linewidths[i],
+                     linestyle = linestyles[i], marker = markers[i])
+
+    style_axis(ax, 'Discount (%)', 'Avg Customer Rating', "Does the Discount–Rating Relationship Persist Across Segments?", 10, 15)
+    ax.legend(title = 'Segment', loc = 'upper left', frameon = True)
+    ax.grid(True, alpha = 0.3)
+    
+    fig.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi = 300, bbox_inches = 'tight')
+    plt.show()
+
+def plot_product_concentration(
+    product_data: pd.DataFrame,
+    top_5_share: float,
+    output_path: str | None = None
+) -> None:
+    """Render a horizontal bar chart highlighting top products and Electronics dominance.
+
+    Parameters
+    ----------
+    product_data : pd.DataFrame
+        Product summary DataFrame from `src.analysis.get_product_concentration_data`.
+    top_5_share : float
+        Calculated percentage share of the top 5 items within the entire company.
+    output_path : str, optional
+        Filepath destination to save the generated figure.
+    """
+    fig, ax = plt.subplots(figsize = (10, 5), dpi = 200)
+
+    top_products = product_data.head(5)
+
+    palette = {cat : ('#08519c' if cat == 'Electronics' else '#cccccc') for cat in top_products['category'].unique()}
+
+    sns.barplot(data = top_products, x = 'total_revenue', y = 'product', ax = ax,
+                hue = 'category', palette = palette, dodge = False)   
+    style_axis(ax, 'Total Revenue ($)', 'Product', 
+               f'Revenue Concentration: Top 5 Products Drive {top_5_share:.1f}% of Total Sales',
+               10, 15)
+    ax.xaxis.set_major_formatter(plt.matplotlib.ticker.StrMethodFormatter('{x:,.0f}'))
+    ax.legend(title = 'Category', loc = 'lower right', frameon = True)
+    ax.grid(axis = 'x', alpha = 0.3)
+
+    fig.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi = 300, bbox_inches = 'tight') 
+    plt.show()
+
+def plot_customer_segmentation(
+    customer_class_data: pd.DataFrame,
+    output_path: str | None = None
+) -> None:
+    """Render normalized side-by-side pie charts for customer base vs value contributions.
+
+    Parameters
+    ----------
+    customer_class_data : pd.DataFrame
+        Aggregated dataset from `src.analysis.get_customer_segmentation_data`.
+    output_path : str, optional
+        Filepath destination to save the generated figure.
+    """
+    slice_colors = ['#c6dbef', '#6baed6', '#08519c']
+    titles = ['Customer Base Distribution', "Total Revenue Contribution"]
+    cols = ['customer_count', 'total_revenue']
+
+    fig, ax = plt.subplots(nrows = 1, ncols = 2, figsize = (12, 6), dpi = 200)
+
+    for i, sub_ax in enumerate(ax):
+        wedges, _, _ = sub_ax.pie(customer_class_data[cols[i]], labels = customer_class_data['customer_class'],
+                                  autopct = '%1.1f%%', startangle = 90, colors = slice_colors,
+                                    wedgeprops = {'edgecolor' : 'black'}  ) 
+        style_axis(sub_ax, None, None, titles[i], None, 15)
+
+    fig.legend(wedges, customer_class_data['customer_class'], title = 'Segment', 
+               loc = 'upper center', ncol = 3, frameon = True, bbox_to_anchor = (1.1, -0.05))
+    fig.suptitle("Customer Segmentation: Share of Volume vs. Value", fontsize = 15, 
+                 fontweight = 'bold', y = 1.02)
+    fig.tight_layout(rect=[0, 0.06, 1, 0.95])
+    if output_path:
+        fig.savefig(output_path, dpi = 300, bbox_inches = 'tight')
+    plt.show()
+
+def plot_june_rebound_decomposition(
+    plot_data: pd.DataFrame,
+    output_path: str | None = None
+) -> None:
+    """Render a grouped bar chart decomposing the June sales recovery across categories.
+
+    Parameters
+    ----------
+    plot_data : pd.DataFrame
+        Summary dataset generated by `src.analysis.get_june_rebound_data`.
+    output_path : str, optional
+        Filepath destination to save the generated figure.
+    """
+
+    palette = {c: '#cccccc' for c in plot_data['category'].unique()}
+    palette['Electronics'] = '#08519c'
+
+    fig, ax = plt.subplots(figsize = (9, 5), dpi = 200)
+
+    sns.barplot(data = plot_data, x = 'month_label', y = 'total_revenue', hue = 'category',
+                ax = ax, palette = palette, order = ['Apr 2024', 'May 2024', 'Jun 2024'])
+
+    style_axis(ax, 'Timeline', 'Total Revenue ($)', 'The June Rebound Is an Electronics Story, Not Broad Growth', 10, 15)
+
+    ax.legend(title = 'Category', loc = 'upper left', frameon = True)
+    
+    fig.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi = 300, bbox_inches = 'tight')
+    plt.show()
